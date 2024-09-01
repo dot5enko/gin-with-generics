@@ -7,8 +7,8 @@ package gin
 import "net/http"
 
 // CreateTestContext returns a fresh engine and context for testing purposes
-func CreateTestContext(w http.ResponseWriter) (c *Context, r *Engine) {
-	r = New()
+func CreateTestContext[T any](w http.ResponseWriter) (c *Context[T], r *Engine[T]) {
+	r = New[T]()
 	c = r.allocateContext(0)
 	c.reset()
 	c.writermem.reset(w)
@@ -16,7 +16,7 @@ func CreateTestContext(w http.ResponseWriter) (c *Context, r *Engine) {
 }
 
 // CreateTestContextOnly returns a fresh context base on the engine for testing purposes
-func CreateTestContextOnly(w http.ResponseWriter, r *Engine) (c *Context) {
+func CreateTestContextOnly[T any](w http.ResponseWriter, r *Engine[T]) (c *Context[T]) {
 	c = r.allocateContext(r.maxParams)
 	c.reset()
 	c.writermem.reset(w)

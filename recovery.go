@@ -27,33 +27,33 @@ var (
 )
 
 // RecoveryFunc defines the function passable to CustomRecovery.
-type RecoveryFunc func(c *Context, err any)
+type RecoveryFunc[T any] func(c *Context[T], err any)
 
 // Recovery returns a middleware that recovers from any panics and writes a 500 if there was one.
-func Recovery() HandlerFunc {
-	return RecoveryWithWriter(DefaultErrorWriter)
+func Recovery[T any]() HandlerFunc[T] {
+	return RecoveryWithWriter[T](DefaultErrorWriter)
 }
 
 // CustomRecovery returns a middleware that recovers from any panics and calls the provided handle func to handle it.
-func CustomRecovery(handle RecoveryFunc) HandlerFunc {
-	return RecoveryWithWriter(DefaultErrorWriter, handle)
+func CustomRecovery[T any](handle RecoveryFunc[T]) HandlerFunc[T] {
+	return RecoveryWithWriter[T](DefaultErrorWriter, handle)
 }
 
 // RecoveryWithWriter returns a middleware for a given writer that recovers from any panics and writes a 500 if there was one.
-func RecoveryWithWriter(out io.Writer, recovery ...RecoveryFunc) HandlerFunc {
+func RecoveryWithWriter[T any](out io.Writer, recovery ...RecoveryFunc[T]) HandlerFunc[T] {
 	if len(recovery) > 0 {
-		return CustomRecoveryWithWriter(out, recovery[0])
+		return CustomRecoveryWithWriter[T](out, recovery[0])
 	}
-	return CustomRecoveryWithWriter(out, defaultHandleRecovery)
+	return CustomRecoveryWithWriter[T](out, defaultHandleRecovery)
 }
 
 // CustomRecoveryWithWriter returns a middleware for a given writer that recovers from any panics and calls the provided handle func to handle it.
-func CustomRecoveryWithWriter(out io.Writer, handle RecoveryFunc) HandlerFunc {
+func CustomRecoveryWithWriter[T any](out io.Writer, handle RecoveryFunc[T]) HandlerFunc[T] {
 	var logger *log.Logger
 	if out != nil {
 		logger = log.New(out, "\n\n\x1b[31m", log.LstdFlags)
 	}
-	return func(c *Context) {
+	return func(c *Context[T]) {
 		defer func() {
 			if err := recover(); err != nil {
 				// Check for a broken connection, as it is not really a
@@ -103,7 +103,7 @@ func CustomRecoveryWithWriter(out io.Writer, handle RecoveryFunc) HandlerFunc {
 	}
 }
 
-func defaultHandleRecovery(c *Context, _ any) {
+func defaultHandleRecovery[T any](c *Context[T], _ any) {
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 

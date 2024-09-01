@@ -50,16 +50,16 @@ var regSafePrefix = regexp.MustCompile("[^a-zA-Z0-9/-]+")
 var regRemoveRepeatedChar = regexp.MustCompile("/{2,}")
 
 // HandlerFunc defines the handler used by gin middleware as return value.
-type HandlerFunc func(*Context)
+type HandlerFunc[T any] func(*Context[T])
 
 // OptionFunc defines the function to change the default configuration
-type OptionFunc func(*Engine)
+type OptionFunc[T any] func(*Engine[T])
 
 // HandlersChain defines a HandlerFunc slice.
-type HandlersChain []HandlerFunc
+type HandlersChain[T any] []HandlerFunc[T]
 
 // Last returns the last handler in the chain. i.e. the last handler is the main one.
-func (c HandlersChain) Last() HandlerFunc {
+func (c HandlersChain[T]) Last() HandlerFunc[T] {
 	if length := len(c); length > 0 {
 		return c[length-1]
 	}
@@ -67,15 +67,15 @@ func (c HandlersChain) Last() HandlerFunc {
 }
 
 // RouteInfo represents a request route's specification which contains method and path and its handler.
-type RouteInfo struct {
+type RouteInfo[T any] struct {
 	Method      string
 	Path        string
 	Handler     string
-	HandlerFunc HandlerFunc
+	HandlerFunc HandlerFunc[T]
 }
 
 // RoutesInfo defines a RouteInfo slice.
-type RoutesInfo []RouteInfo
+type RoutesInfo[T any] []RouteInfo[T]
 
 // Trusted platforms
 const (
@@ -91,8 +91,8 @@ const (
 
 // Engine is the framework's instance, it contains the muxer, middleware and configuration settings.
 // Create an instance of Engine, by using New() or Default()
-type Engine struct {
-	RouterGroup
+type Engine[T any] struct {
+	RouterGroup[T]
 
 	// RedirectTrailingSlash enables automatic redirection if the current route can't be matched but a
 	// handler for the path with (without) the trailing slash exists.
@@ -168,19 +168,19 @@ type Engine struct {
 	secureJSONPrefix string
 	HTMLRender       render.HTMLRender
 	FuncMap          template.FuncMap
-	allNoRoute       HandlersChain
-	allNoMethod      HandlersChain
-	noRoute          HandlersChain
-	noMethod         HandlersChain
+	allNoRoute       HandlersChain[T]
+	allNoMethod      HandlersChain[T]
+	noRoute          HandlersChain[T]
+	noMethod         HandlersChain[T]
 	pool             sync.Pool
-	trees            methodTrees
+	trees            methodTrees[T]
 	maxParams        uint16
 	maxSections      uint16
 	trustedProxies   []string
 	trustedCIDRs     []*net.IPNet
 }
 
-var _ IRouter = (*Engine)(nil)
+var _ IRouter[any] = (*Engine[any])(nil)
 
 // New returns a new blank Engine instance without any middleware attached.
 // By default, the configuration is:
@@ -190,10 +190,10 @@ var _ IRouter = (*Engine)(nil)
 // - ForwardedByClientIP:    true
 // - UseRawPath:             false
 // - UnescapePathValues:     true
-func New(opts ...OptionFunc) *Engine {
+func New[T any](opts ...OptionFunc[T]) *Engine[T] {
 	debugPrintWARNINGNew()
-	engine := &Engine{
-		RouterGroup: RouterGroup{
+	engine := &Engine[T]{
+		RouterGroup: RouterGroup[T]{
 			Handlers: nil,
 			basePath: "/",
 			root:     true,
@@ -209,7 +209,7 @@ func New(opts ...OptionFunc) *Engine {
 		RemoveExtraSlash:       false,
 		UnescapePathValues:     true,
 		MaxMultipartMemory:     defaultMultipartMemory,
-		trees:                  make(methodTrees, 0, 9),
+		trees:                  make(methodTrees[T], 0, 9),
 		delims:                 render.Delims{Left: "{{", Right: "}}"},
 		secureJSONPrefix:       "while(1);",
 		trustedProxies:         []string{"0.0.0.0/0", "::/0"},
@@ -223,14 +223,14 @@ func New(opts ...OptionFunc) *Engine {
 }
 
 // Default returns an Engine instance with the Logger and Recovery middleware already attached.
-func Default(opts ...OptionFunc) *Engine {
+func Default[T any](opts ...OptionFunc[T]) *Engine[T] {
 	debugPrintWARNINGDefault()
-	engine := New()
-	engine.Use(Logger(), Recovery())
+	engine := New[T]()
+	engine.Use(Logger[T](), Recovery[T]())
 	return engine.With(opts...)
 }
 
-func (engine *Engine) Handler() http.Handler {
+func (engine *Engine[T]) Handler() http.Handler {
 	if !engine.UseH2C {
 		return engine
 	}
@@ -239,27 +239,27 @@ func (engine *Engine) Handler() http.Handler {
 	return h2c.NewHandler(engine, h2s)
 }
 
-func (engine *Engine) allocateContext(maxParams uint16) *Context {
+func (engine *Engine[T]) allocateContext(maxParams uint16) *Context[T] {
 	v := make(Params, 0, maxParams)
-	skippedNodes := make([]skippedNode, 0, engine.maxSections)
-	return &Context{engine: engine, params: &v, skippedNodes: &skippedNodes}
+	skippedNodes := make([]skippedNode[T], 0, engine.maxSections)
+	return &Context[T]{engine: engine, params: &v, skippedNodes: &skippedNodes}
 }
 
 // Delims sets template left and right delims and returns an Engine instance.
-func (engine *Engine) Delims(left, right string) *Engine {
+func (engine *Engine[T]) Delims(left, right string) *Engine[T] {
 	engine.delims = render.Delims{Left: left, Right: right}
 	return engine
 }
 
 // SecureJsonPrefix sets the secureJSONPrefix used in Context.SecureJSON.
-func (engine *Engine) SecureJsonPrefix(prefix string) *Engine {
+func (engine *Engine[T]) SecureJsonPrefix(prefix string) *Engine[T] {
 	engine.secureJSONPrefix = prefix
 	return engine
 }
 
 // LoadHTMLGlob loads HTML files identified by glob pattern
 // and associates the result with HTML renderer.
-func (engine *Engine) LoadHTMLGlob(pattern string) {
+func (engine *Engine[T]) LoadHTMLGlob(pattern string) {
 	left := engine.delims.Left
 	right := engine.delims.Right
 	templ := template.Must(template.New("").Delims(left, right).Funcs(engine.FuncMap).ParseGlob(pattern))
@@ -275,7 +275,7 @@ func (engine *Engine) LoadHTMLGlob(pattern string) {
 
 // LoadHTMLFiles loads a slice of HTML files
 // and associates the result with HTML renderer.
-func (engine *Engine) LoadHTMLFiles(files ...string) {
+func (engine *Engine[T]) LoadHTMLFiles(files ...string) {
 	if IsDebugging() {
 		engine.HTMLRender = render.HTMLDebug{Files: files, FuncMap: engine.FuncMap, Delims: engine.delims}
 		return
@@ -286,7 +286,7 @@ func (engine *Engine) LoadHTMLFiles(files ...string) {
 }
 
 // SetHTMLTemplate associate a template with HTML renderer.
-func (engine *Engine) SetHTMLTemplate(templ *template.Template) {
+func (engine *Engine[T]) SetHTMLTemplate(templ *template.Template) {
 	if len(engine.trees) > 0 {
 		debugPrintWARNINGSetHTMLTemplate()
 	}
@@ -295,18 +295,18 @@ func (engine *Engine) SetHTMLTemplate(templ *template.Template) {
 }
 
 // SetFuncMap sets the FuncMap used for template.FuncMap.
-func (engine *Engine) SetFuncMap(funcMap template.FuncMap) {
+func (engine *Engine[T]) SetFuncMap(funcMap template.FuncMap) {
 	engine.FuncMap = funcMap
 }
 
 // NoRoute adds handlers for NoRoute. It returns a 404 code by default.
-func (engine *Engine) NoRoute(handlers ...HandlerFunc) {
+func (engine *Engine[T]) NoRoute(handlers ...HandlerFunc[T]) {
 	engine.noRoute = handlers
 	engine.rebuild404Handlers()
 }
 
 // NoMethod sets the handlers called when Engine.HandleMethodNotAllowed = true.
-func (engine *Engine) NoMethod(handlers ...HandlerFunc) {
+func (engine *Engine[T]) NoMethod(handlers ...HandlerFunc[T]) {
 	engine.noMethod = handlers
 	engine.rebuild405Handlers()
 }
@@ -314,7 +314,7 @@ func (engine *Engine) NoMethod(handlers ...HandlerFunc) {
 // Use attaches a global middleware to the router. i.e. the middleware attached through Use() will be
 // included in the handlers chain for every single request. Even 404, 405, static files...
 // For example, this is the right place for a logger or error management middleware.
-func (engine *Engine) Use(middleware ...HandlerFunc) IRoutes {
+func (engine *Engine[T]) Use(middleware ...HandlerFunc[T]) IRoutes[T] {
 	engine.RouterGroup.Use(middleware...)
 	engine.rebuild404Handlers()
 	engine.rebuild405Handlers()
@@ -322,7 +322,7 @@ func (engine *Engine) Use(middleware ...HandlerFunc) IRoutes {
 }
 
 // With returns a Engine with the configuration set in the OptionFunc.
-func (engine *Engine) With(opts ...OptionFunc) *Engine {
+func (engine *Engine[T]) With(opts ...OptionFunc[T]) *Engine[T] {
 	for _, opt := range opts {
 		opt(engine)
 	}
@@ -330,15 +330,15 @@ func (engine *Engine) With(opts ...OptionFunc) *Engine {
 	return engine
 }
 
-func (engine *Engine) rebuild404Handlers() {
+func (engine *Engine[T]) rebuild404Handlers() {
 	engine.allNoRoute = engine.combineHandlers(engine.noRoute)
 }
 
-func (engine *Engine) rebuild405Handlers() {
+func (engine *Engine[T]) rebuild405Handlers() {
 	engine.allNoMethod = engine.combineHandlers(engine.noMethod)
 }
 
-func (engine *Engine) addRoute(method, path string, handlers HandlersChain) {
+func (engine *Engine[T]) addRoute(method, path string, handlers HandlersChain[T]) {
 	assert1(path[0] == '/', "path must begin with '/'")
 	assert1(method != "", "HTTP method can not be empty")
 	assert1(len(handlers) > 0, "there must be at least one handler")
@@ -347,9 +347,9 @@ func (engine *Engine) addRoute(method, path string, handlers HandlersChain) {
 
 	root := engine.trees.get(method)
 	if root == nil {
-		root = new(node)
+		root = new(node[T])
 		root.fullPath = "/"
-		engine.trees = append(engine.trees, methodTree{method: method, root: root})
+		engine.trees = append(engine.trees, methodTree[T]{method: method, root: root})
 	}
 	root.addRoute(path, handlers)
 
@@ -364,18 +364,18 @@ func (engine *Engine) addRoute(method, path string, handlers HandlersChain) {
 
 // Routes returns a slice of registered routes, including some useful information, such as:
 // the http method, path and the handler name.
-func (engine *Engine) Routes() (routes RoutesInfo) {
+func (engine *Engine[T]) Routes() (routes RoutesInfo[T]) {
 	for _, tree := range engine.trees {
 		routes = iterate("", tree.method, routes, tree.root)
 	}
 	return routes
 }
 
-func iterate(path, method string, routes RoutesInfo, root *node) RoutesInfo {
+func iterate[T any](path, method string, routes RoutesInfo[T], root *node[T]) RoutesInfo[T] {
 	path += root.path
 	if len(root.handlers) > 0 {
 		handlerFunc := root.handlers.Last()
-		routes = append(routes, RouteInfo{
+		routes = append(routes, RouteInfo[T]{
 			Method:      method,
 			Path:        path,
 			Handler:     nameOfFunction(handlerFunc),
@@ -388,7 +388,7 @@ func iterate(path, method string, routes RoutesInfo, root *node) RoutesInfo {
 	return routes
 }
 
-func (engine *Engine) prepareTrustedCIDRs() ([]*net.IPNet, error) {
+func (engine *Engine[T]) prepareTrustedCIDRs() ([]*net.IPNet, error) {
 	if engine.trustedProxies == nil {
 		return nil, nil
 	}
@@ -425,25 +425,25 @@ func (engine *Engine) prepareTrustedCIDRs() ([]*net.IPNet, error) {
 // by default. If you want to disable this feature, use
 // Engine.SetTrustedProxies(nil), then Context.ClientIP() will
 // return the remote address directly.
-func (engine *Engine) SetTrustedProxies(trustedProxies []string) error {
+func (engine *Engine[T]) SetTrustedProxies(trustedProxies []string) error {
 	engine.trustedProxies = trustedProxies
 	return engine.parseTrustedProxies()
 }
 
 // isUnsafeTrustedProxies checks if Engine.trustedCIDRs contains all IPs, it's not safe if it has (returns true)
-func (engine *Engine) isUnsafeTrustedProxies() bool {
+func (engine *Engine[T]) isUnsafeTrustedProxies() bool {
 	return engine.isTrustedProxy(net.ParseIP("0.0.0.0")) || engine.isTrustedProxy(net.ParseIP("::"))
 }
 
 // parseTrustedProxies parse Engine.trustedProxies to Engine.trustedCIDRs
-func (engine *Engine) parseTrustedProxies() error {
+func (engine *Engine[T]) parseTrustedProxies() error {
 	trustedCIDRs, err := engine.prepareTrustedCIDRs()
 	engine.trustedCIDRs = trustedCIDRs
 	return err
 }
 
 // isTrustedProxy will check whether the IP address is included in the trusted list according to Engine.trustedCIDRs
-func (engine *Engine) isTrustedProxy(ip net.IP) bool {
+func (engine *Engine[T]) isTrustedProxy(ip net.IP) bool {
 	if engine.trustedCIDRs == nil {
 		return false
 	}
@@ -456,7 +456,7 @@ func (engine *Engine) isTrustedProxy(ip net.IP) bool {
 }
 
 // validateHeader will parse X-Forwarded-For header and return the trusted client IP address
-func (engine *Engine) validateHeader(header string) (clientIP string, valid bool) {
+func (engine *Engine[T]) validateHeader(header string) (clientIP string, valid bool) {
 	if header == "" {
 		return "", false
 	}
@@ -478,7 +478,7 @@ func (engine *Engine) validateHeader(header string) (clientIP string, valid bool
 }
 
 // updateRouteTree do update to the route tree recursively
-func updateRouteTree(n *node) {
+func updateRouteTree[T any](n *node[T]) {
 	n.path = strings.ReplaceAll(n.path, escapedColon, colon)
 	n.fullPath = strings.ReplaceAll(n.fullPath, escapedColon, colon)
 	n.indices = strings.ReplaceAll(n.indices, backslash, colon)
@@ -491,7 +491,7 @@ func updateRouteTree(n *node) {
 }
 
 // updateRouteTrees do update to the route trees
-func (engine *Engine) updateRouteTrees() {
+func (engine *Engine[T]) updateRouteTrees() {
 	for _, tree := range engine.trees {
 		updateRouteTree(tree.root)
 	}
@@ -514,7 +514,7 @@ func parseIP(ip string) net.IP {
 // Run attaches the router to a http.Server and starts listening and serving HTTP requests.
 // It is a shortcut for http.ListenAndServe(addr, router)
 // Note: this method will block the calling goroutine indefinitely unless an error happens.
-func (engine *Engine) Run(addr ...string) (err error) {
+func (engine *Engine[T]) Run(addr ...string) (err error) {
 	defer func() { debugPrintError(err) }()
 
 	if engine.isUnsafeTrustedProxies() {
@@ -531,7 +531,7 @@ func (engine *Engine) Run(addr ...string) (err error) {
 // RunTLS attaches the router to a http.Server and starts listening and serving HTTPS (secure) requests.
 // It is a shortcut for http.ListenAndServeTLS(addr, certFile, keyFile, router)
 // Note: this method will block the calling goroutine indefinitely unless an error happens.
-func (engine *Engine) RunTLS(addr, certFile, keyFile string) (err error) {
+func (engine *Engine[T]) RunTLS(addr, certFile, keyFile string) (err error) {
 	debugPrint("Listening and serving HTTPS on %s\n", addr)
 	defer func() { debugPrintError(err) }()
 
@@ -547,7 +547,7 @@ func (engine *Engine) RunTLS(addr, certFile, keyFile string) (err error) {
 // RunUnix attaches the router to a http.Server and starts listening and serving HTTP requests
 // through the specified unix socket (i.e. a file).
 // Note: this method will block the calling goroutine indefinitely unless an error happens.
-func (engine *Engine) RunUnix(file string) (err error) {
+func (engine *Engine[T]) RunUnix(file string) (err error) {
 	debugPrint("Listening and serving HTTP on unix:/%s", file)
 	defer func() { debugPrintError(err) }()
 
@@ -570,7 +570,7 @@ func (engine *Engine) RunUnix(file string) (err error) {
 // RunFd attaches the router to a http.Server and starts listening and serving HTTP requests
 // through the specified file descriptor.
 // Note: this method will block the calling goroutine indefinitely unless an error happens.
-func (engine *Engine) RunFd(fd int) (err error) {
+func (engine *Engine[T]) RunFd(fd int) (err error) {
 	debugPrint("Listening and serving HTTP on fd@%d", fd)
 	defer func() { debugPrintError(err) }()
 
@@ -592,7 +592,7 @@ func (engine *Engine) RunFd(fd int) (err error) {
 // RunQUIC attaches the router to a http.Server and starts listening and serving QUIC requests.
 // It is a shortcut for http3.ListenAndServeQUIC(addr, certFile, keyFile, router)
 // Note: this method will block the calling goroutine indefinitely unless an error happens.
-func (engine *Engine) RunQUIC(addr, certFile, keyFile string) (err error) {
+func (engine *Engine[T]) RunQUIC(addr, certFile, keyFile string) (err error) {
 	debugPrint("Listening and serving QUIC on %s\n", addr)
 	defer func() { debugPrintError(err) }()
 
@@ -607,7 +607,7 @@ func (engine *Engine) RunQUIC(addr, certFile, keyFile string) (err error) {
 
 // RunListener attaches the router to a http.Server and starts listening and serving HTTP requests
 // through the specified net.Listener
-func (engine *Engine) RunListener(listener net.Listener) (err error) {
+func (engine *Engine[T]) RunListener(listener net.Listener) (err error) {
 	debugPrint("Listening and serving HTTP on listener what's bind with address@%s", listener.Addr())
 	defer func() { debugPrintError(err) }()
 
@@ -621,8 +621,8 @@ func (engine *Engine) RunListener(listener net.Listener) (err error) {
 }
 
 // ServeHTTP conforms to the http.Handler interface.
-func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	c := engine.pool.Get().(*Context)
+func (engine *Engine[T]) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	c := engine.pool.Get().(*Context[T])
 	c.writermem.reset(w)
 	c.Request = req
 	c.reset()
@@ -635,7 +635,7 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // HandleContext re-enters a context that has been rewritten.
 // This can be done by setting c.Request.URL.Path to your new target.
 // Disclaimer: You can loop yourself to deal with this, use wisely.
-func (engine *Engine) HandleContext(c *Context) {
+func (engine *Engine[T]) HandleContext(c *Context[T]) {
 	oldIndexValue := c.index
 	c.reset()
 	engine.handleHTTPRequest(c)
@@ -643,7 +643,7 @@ func (engine *Engine) HandleContext(c *Context) {
 	c.index = oldIndexValue
 }
 
-func (engine *Engine) handleHTTPRequest(c *Context) {
+func (engine *Engine[T]) handleHTTPRequest(c *Context[T]) {
 	httpMethod := c.Request.Method
 	rPath := c.Request.URL.Path
 	unescape := false
@@ -713,7 +713,7 @@ func (engine *Engine) handleHTTPRequest(c *Context) {
 
 var mimePlain = []string{MIMEPlain}
 
-func serveError(c *Context, code int, defaultMessage []byte) {
+func serveError[T any](c *Context[T], code int, defaultMessage []byte) {
 	c.writermem.status = code
 	c.Next()
 	if c.writermem.Written() {
@@ -730,7 +730,7 @@ func serveError(c *Context, code int, defaultMessage []byte) {
 	c.writermem.WriteHeaderNow()
 }
 
-func redirectTrailingSlash(c *Context) {
+func redirectTrailingSlash[T any](c *Context[T]) {
 	req := c.Request
 	p := req.URL.Path
 	if prefix := path.Clean(c.Request.Header.Get("X-Forwarded-Prefix")); prefix != "." {
@@ -746,7 +746,7 @@ func redirectTrailingSlash(c *Context) {
 	redirectRequest(c)
 }
 
-func redirectFixedPath(c *Context, root *node, trailingSlash bool) bool {
+func redirectFixedPath[T any](c *Context[T], root *node[T], trailingSlash bool) bool {
 	req := c.Request
 	rPath := req.URL.Path
 
@@ -758,7 +758,7 @@ func redirectFixedPath(c *Context, root *node, trailingSlash bool) bool {
 	return false
 }
 
-func redirectRequest(c *Context) {
+func redirectRequest[T any](c *Context[T]) {
 	req := c.Request
 	rPath := req.URL.Path
 	rURL := req.URL.String()
